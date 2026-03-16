@@ -128,10 +128,12 @@ class SparseOcc(MVXTwoStageDetector):
         return self.forward_pts_train(img_feats, voxel_semantics, voxel_instances, instance_class_ids, mask_camera, img_metas)
 
     def forward_test(self, img_metas, img=None, **kwargs):
+        # todo -----------------------------------#
+        # todo 推理
         output = self.simple_test(img_metas, img)
 
-        sem_pred = output['sem_pred'].cpu().numpy().astype(np.uint8)
-        occ_loc = output['occ_loc'].cpu().numpy().astype(np.uint8)
+        sem_pred = output['sem_pred'].cpu().numpy().astype(np.uint8) # (1 32000)
+        occ_loc = output['occ_loc'].cpu().numpy().astype(np.uint8)   # (1 32000 3)
 
         batch_size = sem_pred.shape[0]
 

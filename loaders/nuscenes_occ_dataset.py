@@ -17,20 +17,23 @@ from configs.r50_nuimg_704x256_8f_openocc import occ_class_names as openocc_clas
 
 @DATASETS.register_module()
 class NuSceneOcc(NuScenesDataset):    
-    def __init__(self, occ_gt_root, *args, **kwargs):
+    def __init__(self, data_type, occ_gt_root, *args, **kwargs):
         super().__init__(filter_empty_gt=False, *args, **kwargs)
+        self.data_type = data_type
         self.occ_gt_root = occ_gt_root
         self.data_infos = self.load_annotations(self.ann_file)
+        self.data_infos = self.data_infos[:5]
+        
+        # 离线处理
+        # self.token2scene = {} # 将 token 和 scene 对应起来
+        # for gt_path in glob.glob(os.path.join(self.occ_gt_root, '*/*/*.npz')):
+        #     token = gt_path.split('/')[-2]
+        #     scene_name = gt_path.split('/')[-3]
+        #     self.token2scene[token] = scene_name
 
-        self.token2scene = {}
-        for gt_path in glob.glob(os.path.join(self.occ_gt_root, '*/*/*.npz')):
-            token = gt_path.split('/')[-2]
-            scene_name = gt_path.split('/')[-3]
-            self.token2scene[token] = scene_name
-
-        for i in range(len(self.data_infos)):
-            scene_name = self.token2scene[self.data_infos[i]['token']]
-            self.data_infos[i]['scene_name'] = scene_name
+        # for i in range(len(self.data_infos)):
+        #     scene_name = self.token2scene[self.data_infos[i]['token']]
+        #     self.data_infos[i]['scene_name'] = scene_name
 
     def collect_sweeps(self, index, into_past=150, into_future=0):
         all_sweeps_prev = []
@@ -78,6 +81,9 @@ class NuSceneOcc(NuScenesDataset):
 
         ego2lidar = transform_matrix(lidar2ego_translation, Quaternion(lidar2ego_rotation), inverse=True)
         input_dict['ego2lidar'] = [ego2lidar for _ in range(6)]
+        
+        # todo ------------------------------------------------------#
+        # todo 获取occ_path路径
         input_dict['occ_path'] = os.path.join(self.occ_gt_root, info['scene_name'], info['token'], 'labels.npz')
 
         if self.modality['use_camera']:
@@ -86,7 +92,11 @@ class NuSceneOcc(NuScenesDataset):
             lidar2img_rts = []
 
             for _, cam_info in info['cams'].items():
-                img_paths.append(os.path.relpath(cam_info['data_path']))
+                # img_paths.append(os.path.relpath(cam_info['data_path']))
+                #!!! 修改图片根目录!!!
+                file_path = cam_info['data_path'].replace('data/nuscenes/', self.data_root)
+                img_paths.append(file_path)
+
                 img_timestamps.append(cam_info['timestamp'] / 1e6)
 
                 # obtain lidar to image transformation matrix
@@ -136,7 +146,8 @@ class NuSceneOcc(NuScenesDataset):
             sem_pred = torch.from_numpy(occ_pred['sem_pred'])  # [B, N]
             occ_loc = torch.from_numpy(occ_pred['occ_loc'].astype(np.int64))  # [B, N, 3]
             
-            data_type = self.occ_gt_root.split('/')[-1]
+            # data_type = self.occ_gt_root.split('/')[-1]
+            data_type = self.data_type
             if data_type == 'occ3d' or data_type == 'occ3d_panoptic':
                 occ_class_names = occ3d_class_names
             elif data_type == 'openocc_v2':

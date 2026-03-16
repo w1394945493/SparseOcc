@@ -39,9 +39,11 @@ def compose_lidar2img(ego2global_translation_curr,
 @PIPELINES.register_module()
 class LoadMultiViewImageFromMultiSweeps(object):
     def __init__(self,
+                 data_root,
                  sweeps_num=5,
                  color_type='color',
                  test_mode=False):
+        self.data_root = data_root
         self.sweeps_num = sweeps_num
         self.color_type = color_type
         self.test_mode = test_mode
@@ -140,7 +142,9 @@ class LoadMultiViewImageFromMultiSweeps(object):
                 for sensor in cam_types:
                     # skip loading history frames
                     results['img_timestamp'].append(sweep[sensor]['timestamp'] / 1e6)
-                    results['filename'].append(os.path.relpath(sweep[sensor]['data_path']))
+                    # results['filename'].append(os.path.relpath(sweep[sensor]['data_path']))
+                    file_name = sweep[sensor]['data_path'].replace('data/nuscenes/', self.data_root)
+                    results['filename'].append(file_name)
                     results['lidar2img'].append(compose_lidar2img(
                         results['ego2global_translation'],
                         results['ego2global_rotation'],
