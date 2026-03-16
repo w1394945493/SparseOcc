@@ -42,7 +42,7 @@ class SparseOccTransformer(BaseModule):
             semantic=True,
             topk_training=topk_training,
             topk_testing=topk_testing
-        )
+        ) # SparseVoxelDecoder
         self.decoder = MaskFormerOccDecoder(
             embed_dims=embed_dims,
             num_layers=num_layers,
@@ -54,7 +54,7 @@ class SparseOccTransformer(BaseModule):
             num_classes=num_classes,
             pc_range=pc_range,
             occ_size=occ_size,
-        )
+        ) # MaskTransformer
         
     @torch.no_grad()
     def init_weights(self):
@@ -78,8 +78,12 @@ class SparseOccTransformer(BaseModule):
         img_metas = copy.deepcopy(img_metas)
         img_metas[0]['lidar2img'] = torch.matmul(lidar2img, ego2lidar) # (1 48 4 4) 以自车为中心
 
-        occ_preds = self.voxel_decoder(mlvl_feats, img_metas=img_metas) # 解码
-        mask_preds, class_preds = self.decoder(occ_preds, mlvl_feats, img_metas)
+        # ------------------------------------------------ #
+        # todo Sparse Voxel Decoder
+        occ_preds = self.voxel_decoder(mlvl_feats, img_metas=img_metas) # 论文3.1 Sparse Voxel decoder 稀疏体素解码器  8//2=4 4//2=2 2//2=1
+        # ------------------------------------------------ #
+        # todo MaskFormer
+        mask_preds, class_preds = self.decoder(occ_preds, mlvl_feats, img_metas) # 论文3.2 MaskFormer 
         
         return occ_preds, mask_preds, class_preds
 
@@ -102,6 +106,7 @@ class MaskFormerOccDecoder(BaseModule):
         self.num_queries = num_queries
         self.num_frames = num_frames
 
+        # layer解码层
         self.decoder_layer = MaskFormerOccDecoderLayer(
             embed_dims=embed_dims,
             mask_dim=embed_dims,
@@ -122,23 +127,26 @@ class MaskFormerOccDecoder(BaseModule):
         self.decoder_layer.init_weights()
         
     def forward(self, occ_preds, mlvl_feats, img_metas):
-        occ_loc, occ_pred, _, mask_feat, _ = occ_preds[-1]
+        occ_loc, occ_pred, _, mask_feat, _ = occ_preds[-1] # tood test: mask_feat: (1 32000 256) 只取了最后一层的特征
         bs = mask_feat.shape[0]
-        query_feat = self.query_feat.weight[None].repeat(bs, 1, 1)
-        query_pos = self.query_pos.weight[None].repeat(bs, 1, 1)
+        query_feat = self.query_feat.weight[None].repeat(bs, 1, 1) # (1 100 256)
+        query_pos = self.query_pos.weight[None].repeat(bs, 1, 1) # (1 100 256)
         
-        valid_map, mask_pred, class_pred = self.decoder_layer.pred_segmentation(query_feat, mask_feat)
+        valid_map, mask_pred, class_pred = self.decoder_layer.pred_segmentation(query_feat, mask_feat) # valid_map:(1 100 32000) mask_pred:(1 100 32000) class_pred:(1 100 17)
         
         class_preds = [class_pred]
         mask_preds = [mask_pred]
 
-        for i in range(self.num_layers):
+        for i in range(self.num_layers): # self.num_layers:2
             DUMP.stage_count = i
+            
+            # todo --------------------------------------#
+            # todo 掩码预测mask_pred，类别预测class_pred
             query_feat, valid_map, mask_pred, class_pred = self.decoder_layer(
                 query_feat, valid_map, mask_pred, occ_preds, mlvl_feats, query_pos, img_metas
             )
-            mask_preds.append(mask_pred)
-            class_preds.append(class_pred)
+            mask_preds.append(mask_pred)   # mask_pred: (1 100 32000)
+            class_preds.append(class_pred) # class_pred: (1 100 17)
 
         return mask_preds, class_preds
 
@@ -188,28 +196,37 @@ class MaskFormerOccDecoderLayer(BaseModule):
             occ_pred: [bs, num_voxel]
             occ_loc: [bs, num_voxel, 3]
         """
-        occ_loc, occ_pred, _, mask_feat, _ = occ_preds[-1]
-        query_feat = self.norm1(self.self_attn(query_feat, query_pos=query_pos))
-
-        sampled_feat = self.sampling(query_feat, valid_map, occ_loc, mlvl_feats, img_metas)
-        query_feat = self.norm2(self.mixing(sampled_feat, query_feat))
+        occ_loc, occ_pred, _, mask_feat, _ = occ_preds[-1] # mask_feat:(1 32000 256)
+        query_feat = self.norm1(self.self_attn(query_feat, query_pos=query_pos)) # Self attention (1 100 256)
+        # todo -----------------------------------------------------#
+        # todo 掩码引导的稀疏采样
+        sampled_feat = self.sampling(query_feat, valid_map, occ_loc, mlvl_feats, img_metas) # Mask-guided Sparse Sampling: sampled_feat: (1 100 4 32 64)
+        # todo 自适应混合
+        query_feat = self.norm2(self.mixing(sampled_feat, query_feat)) # Adaptive Mixing 
+        # todo 前馈网络
+        query_feat = self.norm3(self.ffn(query_feat))  # (1 100 256)
         
-        query_feat = self.norm3(self.ffn(query_feat))
-        
+        # todo ------------------------------------------------------#
+        # todo 预测：查询嵌入和稀疏体素交互，以进行 类别预测和掩码预测：
+        # todo 类别预测使用带有sigmoid激活函数的线性分类器；掩码预测：通过MLP将查询嵌入转换为掩码嵌入，掩码嵌入与稀疏体素嵌入进行点积，以生成掩码预测
         valid_map, mask_pred, class_pred = self.pred_segmentation(query_feat, mask_feat)
         return query_feat, valid_map, mask_pred, class_pred
     
     def pred_segmentation(self, query_feat, mask_feat):
         if self.training and query_feat.requires_grad:
-            return cp(self.inner_pred_segmentation, query_feat, mask_feat, use_reentrant=False)
-        else:
+            return cp(self.inner_pred_segmentation, query_feat, mask_feat, use_reentrant=False) # cp：checkpoint训练时
+        else: # 推理
             return self.inner_pred_segmentation(query_feat, mask_feat)
     
     def inner_pred_segmentation(self, query_feat, mask_feat):
-        class_pred = self.classifier(query_feat)
-        feat_proj = self.mask_proj(query_feat)
-        mask_pred = torch.einsum("bqc,bnc->bqn", feat_proj, mask_feat)
-        valid_map = (mask_pred > 0.0)
+        class_pred = self.classifier(query_feat) # (1 100 256) -> (1 100 17) 对100个query独立分类的结果 原始的query_feat用于作分类
+        # todo -----------------------------------------#
+        # todo 掩码预测：通过MLP将查询嵌入转换为掩码嵌入
+        feat_proj = self.mask_proj(query_feat) # (1 100 256) -> (1 100 256) 特征解耦 class_pred和feat_pred分别承担不同的任务
+        # mask_pred: 体素特征和Query特征的相似度矩阵
+        # 掩码嵌入与稀疏体素嵌入进行点积，生成掩码预测
+        mask_pred = torch.einsum("bqc,bnc->bqn", feat_proj, mask_feat) # (1 100 256) * (1 32000 256) -> (1 100 32000)  Query特征和体素特征之间的相似度矩阵
+        valid_map = (mask_pred > 0.0) # (1 100 32000) 作为下一层的采样引导
         
         return valid_map, mask_pred, class_pred
 

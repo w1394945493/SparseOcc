@@ -132,8 +132,8 @@ class SparseOcc(MVXTwoStageDetector):
         # todo 推理
         output = self.simple_test(img_metas, img)
 
-        sem_pred = output['sem_pred'].cpu().numpy().astype(np.uint8) # (1 32000)
-        occ_loc = output['occ_loc'].cpu().numpy().astype(np.uint8)   # (1 32000 3)
+        sem_pred = output['sem_pred'].cpu().numpy().astype(np.uint8) # (1 32000) 语义类别
+        occ_loc = output['occ_loc'].cpu().numpy().astype(np.uint8)   # (1 32000 3) 网格索引
 
         batch_size = sem_pred.shape[0]
 

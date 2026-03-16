@@ -219,3 +219,4 @@ work_dirs/
 # .vscode
 temp/
 outputs/
+.git-credentials

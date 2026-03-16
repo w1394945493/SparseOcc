@@ -16,6 +16,7 @@ from configs.r50_nuimg_704x256_8f import occ_class_names
 from mmcv.parallel import MMDataParallel
 from mmcv.runner import load_checkpoint
 from mmdet3d.models import build_model
+import pickle
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 color_map = np.array([
@@ -64,6 +65,7 @@ def main():
     parser.add_argument('--override', nargs='+', action=DictAction)
     args = parser.parse_args()
 
+    os.makedirs(args.viz_dir,exist_ok=True)
     # parse configs
     cfgs = Config.fromfile(args.config)
     if args.override is not None:
@@ -83,7 +85,7 @@ def main():
 
     # you need one GPU
     assert torch.cuda.is_available()
-    print(torch.cuda.device_count())
+    # print(torch.cuda.device_count())
     assert torch.cuda.device_count() == 1
 
     # logging
@@ -123,19 +125,32 @@ def main():
         #print(data['img_metas'].data[0][0]['filename'][:6])
 
         with torch.no_grad():
+            #----------------------------------------------------------#
+            # todo 推理
             occ_pred = model(return_loss=False, rescale=True, **data)[0]
 
-            sem_pred = torch.from_numpy(occ_pred['sem_pred'])[0]  # [N]
-            occ_loc = torch.from_numpy(occ_pred['occ_loc'].astype(np.int64))[0]  # [N, 3]
+            sem_pred = torch.from_numpy(occ_pred['sem_pred'])[0]  # [N] 语义
+            occ_loc = torch.from_numpy(occ_pred['occ_loc'].astype(np.int64))[0]  # [N, 3] 位置
             
             # sparse to dense
             free_id = len(occ_class_names) - 1
             dense_pred = torch.ones(occ_size, device=sem_pred.device, dtype=sem_pred.dtype) * free_id  # [200, 200, 16]
             dense_pred[occ_loc[..., 0], occ_loc[..., 1], occ_loc[..., 2]] = sem_pred
             
-            sem_pred = dense_pred.numpy()
+            sem_pred = dense_pred.numpy() # (200 200 16)
+            # cv2.imwrite(os.path.join(args.viz_dir, 'sem_%04d.jpg' % i), occ2img(sem_pred)[..., ::-1])
 
-            cv2.imwrite(os.path.join(args.viz_dir, 'sem_%04d.jpg' % i), occ2img(sem_pred)[..., ::-1])
+            # 同时保存一下体素
+            occ_gt = data['voxel_semantics'][0].cpu().numpy()
+            output =dict(
+                occ_pred=sem_pred,
+                occ_gt=occ_gt,
+            )
+            with open(os.path.join(args.viz_dir, 'sem_%04d.pkl' % i), 'wb') as f:
+                pickle.dump(output, f)             
+
+
+            
 
 
 if __name__ == '__main__':

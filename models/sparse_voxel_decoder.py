@@ -163,11 +163,11 @@ class SparseVoxelDecoder(BaseModule):
             seg_pred_2x = batch_indexing(seg_pred_2x, indices, layout='channel_last')  # [B, K, CLS]
 
             occ_preds.append((
-                torch.div(query_coord_2x, interval // 2, rounding_mode='trunc').long(),
+                torch.div(query_coord_2x, interval // 2, rounding_mode='trunc').long(), # (1 2000 3)
                 None,
-                seg_pred_2x,
-                query_feat_2x,
-                interval // 2)
+                seg_pred_2x,   # (1 2000 18)
+                query_feat_2x, # (1 2000 256)
+                interval // 2) # 8//2=4
             )
 
             # todo ---------------------------------------#

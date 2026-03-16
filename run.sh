@@ -40,6 +40,18 @@ cd models/csrc
 python setup.py build_ext --inplace # --inplace表示原地编译
 
 # -------------------------------- #
+# 远程仓库
+mkdir -p /vepfs-mlp2/c20250502/haoce/wangyushen/.ssh
+chmod 700 /vepfs-mlp2/c20250502/haoce/wangyushen/.ssh
+ssh-keygen -t rsa -b 4096 -f /vepfs-mlp2/c20250502/haoce/wangyushen/.ssh/id_rsa -C "1394945493@qq.com"
+cat /vepfs-mlp2/c20250502/haoce/wangyushen/.ssh/id_rsa.pub
+
+
+# token 创建token记得勾选repo，不要保存token
+git remote set-url origin https://w1394945493:<token>@github.com/w1394945493/SparseOcc.git
+git reset --soft origin/main
+git restore --staged .
+# -------------------------------- #
 # SparseOcc 评估
 export CUDA_VISIBLE_DEVICES=0
 python val.py --config configs/sparseocc_r50_nuimg_704x256_8f.py --weights checkpoints/sparseocc_r50_nuimg_704x256_8f.pth
@@ -50,7 +62,7 @@ python /vepfs-mlp2/c20250502/haoce/wangyushen/SparseOcc/val.py \
     --weights /c20250502/wangyushen/Weights/sparseocc/sparseocc_r50_nuimg_704x256_8f_24e_v1.1.pth
 
 # -------------------------------- #
-# SparseOcc 推理(可视化)
+# SparseOcc 仅推理(可视化(二维图))
 python /vepfs-mlp2/c20250502/haoce/wangyushen/SparseOcc/viz_prediction.py \
     --config /vepfs-mlp2/c20250502/haoce/wangyushen/SparseOcc/configs/r50_nuimg_704x256_8f_custom.py \
     --weights /c20250502/wangyushen/Weights/sparseocc/sparseocc_r50_nuimg_704x256_8f_24e_v1.1.pth \

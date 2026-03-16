@@ -129,13 +129,13 @@ class SparseOccHead(nn.Module):
         return loss_dict
     
     def merge_occ_pred(self, outs):
-        mask_cls = outs['class_preds'][-1].sigmoid()
-        mask_pred = outs['mask_preds'][-1].sigmoid()
-        occ_indices = outs['occ_preds'][-1][0]
+        mask_cls = outs['class_preds'][-1].sigmoid() # (1 100 17)
+        mask_pred = outs['mask_preds'][-1].sigmoid() # (1 100 32000)
+        occ_indices = outs['occ_preds'][-1][0] # (1 32000 3)
         
-        sem_pred = self.merge_semseg(mask_cls, mask_pred)  # [B, C, N]
-        outs['sem_pred'] = sem_pred
-        outs['occ_loc'] = occ_indices
+        sem_pred = self.merge_semseg(mask_cls, mask_pred)  # [B, C, N] # (1 32000)
+        outs['sem_pred'] = sem_pred # (1 32000)
+        outs['occ_loc'] = occ_indices # (1 32000 3)
 
         if self.panoptic:
             pano_inst, pano_sem = self.merge_panoseg(mask_cls, mask_pred)  # [B, C, N]
@@ -146,16 +146,16 @@ class SparseOccHead(nn.Module):
     
     # https://github.com/facebookresearch/MaskFormer/blob/main/mask_former/mask_former_model.py#L242
     def merge_semseg(self, mask_cls, mask_pred):
-        valid_mask = mask_cls.max(dim=-1).values > self.score_threshold
+        valid_mask = mask_cls.max(dim=-1).values > self.score_threshold # (1 100)
         mask_cls[~valid_mask] = 0.0
 
-        semseg = torch.einsum("bqc,bqn->bcn", mask_cls, mask_pred)
+        semseg = torch.einsum("bqc,bqn->bcn", mask_cls, mask_pred) # (1 100 17)*(1 100 32000) -> (1 17 32000)
         if semseg.shape[1] == self.num_classes:
             semseg = semseg[:, :-1]
         
         cls_score, cls_id = torch.max(semseg, dim=1)
         cls_id[cls_score < 0.01] = self.num_classes - 1
-        return cls_id  # [B, N]
+        return cls_id  # [B, N] 1 32000
     
     def merge_panoseg(self, mask_cls, mask_pred):
         pano_inst, pano_sem = [], []

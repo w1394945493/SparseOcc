@@ -22,6 +22,8 @@ class NuSceneOcc(NuScenesDataset):
         self.data_type = data_type
         self.occ_gt_root = occ_gt_root
         self.data_infos = self.load_annotations(self.ann_file)
+        # ------------------------------------------ #
+        self.data_infos = self.data_infos[::80]
         self.data_infos = self.data_infos[:5]
         
         # ------------------------------------------ #
