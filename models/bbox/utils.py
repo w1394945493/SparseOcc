@@ -45,16 +45,17 @@ def denormalize_bbox(normalized_bboxes):
 
 def encode_bbox(bboxes, pc_range=None):
     xyz = bboxes[..., 0:3].clone()
-    wlh = bboxes[..., 3:6].log()
-    rot = bboxes[..., 6:7]
+    wlh = bboxes[..., 3:6].log() # 物体长宽高取自然对数
+    rot = bboxes[..., 6:7] # 角度周期性编码： rot -> sin,cos 将偏航角转化为正弦和余弦值，让模型学习更连续、更稳定
 
+    # 归一化坐标：将正式世界转化为0-1之间的比例，目的：让模型不再感知具体距离，而感知物体在整个感知范围内的相对位置
     if pc_range is not None:
         xyz[..., 0] = (xyz[..., 0] - pc_range[0]) / (pc_range[3] - pc_range[0])
         xyz[..., 1] = (xyz[..., 1] - pc_range[1]) / (pc_range[4] - pc_range[1])
         xyz[..., 2] = (xyz[..., 2] - pc_range[2]) / (pc_range[5] - pc_range[2])
 
     if bboxes.shape[-1] > 7:
-        vel = bboxes[..., 7:9].clone()
+        vel = bboxes[..., 7:9].clone() # 如果有速度
         return torch.cat([xyz, wlh, rot.sin(), rot.cos(), vel], dim=-1)
     else:
         return torch.cat([xyz, wlh, rot.sin(), rot.cos()], dim=-1)

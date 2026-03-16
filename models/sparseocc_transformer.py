@@ -63,7 +63,7 @@ class SparseOccTransformer(BaseModule):
 
     def forward(self, mlvl_feats, img_metas):
         for lvl, feat in enumerate(mlvl_feats):
-            B, TN, GC, H, W = feat.shape  # [B, TN, GC, H, W]
+            B, TN, GC, H, W = feat.shape  # [B, TN, GC, H, W] 例如：(1 48 256 64 176) N=6 T=8 G=4
             N, T, G, C = 6, TN // 6, 4, GC // 4
             feat = feat.reshape(B, T, N, G, C, H, W)
             feat = feat.permute(0, 1, 3, 2, 5, 6, 4)  # [B, T, G, N, H, W, C]
@@ -71,14 +71,14 @@ class SparseOccTransformer(BaseModule):
             mlvl_feats[lvl] = feat.contiguous()
         
         lidar2img = np.asarray([m['lidar2img'] for m in img_metas]).astype(np.float32)
-        lidar2img = torch.from_numpy(lidar2img).to(feat.device)  # [B, N, 4, 4]
+        lidar2img = torch.from_numpy(lidar2img).to(feat.device)  # [B, N, 4, 4] # (1 48 4 4)
         ego2lidar = np.asarray([m['ego2lidar'] for m in img_metas]).astype(np.float32)
-        ego2lidar = torch.from_numpy(ego2lidar).to(feat.device)  # [B, N, 4, 4]
+        ego2lidar = torch.from_numpy(ego2lidar).to(feat.device)  # [B, N, 4, 4] # (1 48 4 4)
         
         img_metas = copy.deepcopy(img_metas)
-        img_metas[0]['lidar2img'] = torch.matmul(lidar2img, ego2lidar)
+        img_metas[0]['lidar2img'] = torch.matmul(lidar2img, ego2lidar) # (1 48 4 4) 以自车为中心
 
-        occ_preds = self.voxel_decoder(mlvl_feats, img_metas=img_metas)
+        occ_preds = self.voxel_decoder(mlvl_feats, img_metas=img_metas) # 解码
         mask_preds, class_preds = self.decoder(occ_preds, mlvl_feats, img_metas)
         
         return occ_preds, mask_preds, class_preds

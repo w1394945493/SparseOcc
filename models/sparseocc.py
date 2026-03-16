@@ -202,7 +202,7 @@ class SparseOcc(MVXTwoStageDetector):
                 img_feats_curr = self.memory[img_filenames[img_indices[0]]]
             else:
                 # extract feature and put into memory
-                img_feats_curr = self.extract_feat(img[:, i], img_metas_curr)
+                img_feats_curr = self.extract_feat(img[:, i], img_metas_curr) # len:4 0-(1 6 256 64 176) 3-(1 6 256 8 22)
                 self.memory[img_filenames[img_indices[0]]] = img_feats_curr
                 self.queue.put(img_filenames[img_indices[0]])
                 while self.queue.qsize() > 16:  # avoid OOM
@@ -228,7 +228,9 @@ class SparseOcc(MVXTwoStageDetector):
 
         img_feats = img_feats_reorganized
         img_metas = img_metas_reorganized
-        img_feats = cast_tensor_type(img_feats, torch.half, torch.float32)
+        img_feats = cast_tensor_type(img_feats, torch.half, torch.float32) # 递归遍历嵌套数据结构，将tensor转换为指定浮点类型
 
+        # todo------------------------------#
+        # todo 主要部分
         # run detector
         return self.simple_test_pts(img_feats, img_metas, rescale=rescale)

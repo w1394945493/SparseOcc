@@ -44,6 +44,14 @@ python setup.py build_ext --inplace # --inplace表示原地编译
 export CUDA_VISIBLE_DEVICES=0
 python val.py --config configs/sparseocc_r50_nuimg_704x256_8f.py --weights checkpoints/sparseocc_r50_nuimg_704x256_8f.pth
 
+# 评估(无结果保存)
 python /vepfs-mlp2/c20250502/haoce/wangyushen/SparseOcc/val.py \
     --config /vepfs-mlp2/c20250502/haoce/wangyushen/SparseOcc/configs/r50_nuimg_704x256_8f_custom.py \
     --weights /c20250502/wangyushen/Weights/sparseocc/sparseocc_r50_nuimg_704x256_8f_24e_v1.1.pth
+
+# -------------------------------- #
+# SparseOcc 推理(可视化)
+python /vepfs-mlp2/c20250502/haoce/wangyushen/SparseOcc/viz_prediction.py \
+    --config /vepfs-mlp2/c20250502/haoce/wangyushen/SparseOcc/configs/r50_nuimg_704x256_8f_custom.py \
+    --weights /c20250502/wangyushen/Weights/sparseocc/sparseocc_r50_nuimg_704x256_8f_24e_v1.1.pth \
+    --viz-dir /c20250502/wangyushen/Outputs/sparseocc/outputs/vis

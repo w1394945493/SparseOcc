@@ -16,7 +16,7 @@ from configs.r50_nuimg_704x256_8f import occ_class_names
 from mmcv.parallel import MMDataParallel
 from mmcv.runner import load_checkpoint
 from mmdet3d.models import build_model
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 color_map = np.array([
     [0, 0, 0, 255],    # others
@@ -83,6 +83,7 @@ def main():
 
     # you need one GPU
     assert torch.cuda.is_available()
+    print(torch.cuda.device_count())
     assert torch.cuda.device_count() == 1
 
     # logging

@@ -107,44 +107,58 @@ class SparseVoxelDecoder(BaseModule):
         for i in range(len(self.decoder_layers)):
             self.decoder_layers[i].init_weights()
 
-    def forward(self, mlvl_feats, img_metas):
+    def forward(self, mlvl_feats, img_metas): # Corse-to-fine 稀疏采样解码
+        # todo ------------------------------------------------#
+        # todo coarse-to-fine structure 
         occ_preds = []
         
-        topk = self.topk_training if self.training else self.topk_testing
-        
+        topk = self.topk_training if self.training else self.topk_testing # train:[4000 16000 64000] test:[2000 8000 32000]
+
         B = len(img_metas)
         # init query coords
-        interval = 2 ** self.num_layers
-        query_coord = generate_grid(self.voxel_dim, interval).expand(B, -1, -1)  # [B, N, 3]
+        interval = 2 ** self.num_layers # num_layers: 3 interval:8
+        # ------------------------------------------------------#
+        # interval：8 生成 (200/8 200/8 16/8)
+        query_coord = generate_grid(self.voxel_dim, interval).expand(B, -1, -1)  # [B, N, 3] # generate_grid: 在3D空间中生成一个均匀分布的离散网格坐标
+        # 初始的查询特征
         query_feat = torch.zeros([B, query_coord.shape[1], self.embed_dims], device=query_coord.device)  # [B, N, C]
 
+        # ------------------------------------------------------#
+        # 逐层细化
         for i, layer in enumerate(self.decoder_layers):
             DUMP.stage_count = i
             
             interval = 2 ** (self.num_layers - i)  # 8 4 2 1
 
+            # todo --------------------------------------------------------------------#
+            # todo 将离散的网格坐标变成真实世界的物理坐标，并根据当前缩放倍数编码
             # bbox from coords
-            query_bbox = index2point(query_coord, self.pc_range, voxel_size=0.4)  # [B, N, 3]
-            query_bbox = point2bbox(query_bbox, box_size=0.4 * interval)  # [B, N, 6]
-            query_bbox = encode_bbox(query_bbox, pc_range=self.pc_range)  # [B, N, 6]
-
+            query_bbox = index2point(query_coord, self.pc_range, voxel_size=0.4)  # [B, N, 3] 网格索引 转换为 世界坐标
+            query_bbox = point2bbox(query_bbox, box_size=0.4 * interval)  # [B, N, 6] 位置 -> 位置 + 宽长高(网格尺寸0.4)
+            query_bbox = encode_bbox(query_bbox, pc_range=self.pc_range)  # [B, N, 6] # 编码
+            # todo --------------------------------------------------------------------#
+            # todo 空间特征提取：Transformer层，query从图像特征中采样
             # transformer layer
             query_feat = layer(query_feat, query_bbox, mlvl_feats, img_metas)  # [B, N, C]
             
-            # upsample 2x
-            query_feat = self.lift_feat_heads[i](query_feat)  # [B, N, 8C]
-            query_feat_2x, query_coord_2x = upsample(query_feat, query_coord, interval // 2)
+            # upsample 2x 
+            query_feat = self.lift_feat_heads[i](query_feat)  # [B, N, 8C] 将特征维度拉高
+            query_feat_2x, query_coord_2x = upsample(query_feat, query_coord, interval // 2) # 每个大方块切分成8个小方块，空间分辨率提升一倍
 
             if self.semantic:
                 seg_pred_2x = self.seg_pred_heads[i](query_feat_2x)  # [B, K, CLS]
             else:
                 seg_pred_2x = None
 
+            # todo --------------------------------------------------------------------#
+            # todo 稀疏化筛选(剪枝)
             # sparsify after seg_pred
-            non_free_prob = 1 - F.softmax(seg_pred_2x, dim=-1)[..., -1]  # [B, K]
-            indices = torch.topk(non_free_prob, k=topk[i], dim=1)[1]  # [B, K]
-
-            query_coord_2x = batch_indexing(query_coord_2x, indices, layout='channel_last')  # [B, K, 3]
+            non_free_prob = 1 - F.softmax(seg_pred_2x, dim=-1)[..., -1]  # [B, K] # 用以预测新切出来的小方块中，哪些非空
+            indices = torch.topk(non_free_prob, k=topk[i], dim=1)[1]  # [B, K] # 只保留得分最高的N个位置
+            #  注：topk筛选出的索引本身不可导。人为的，离散地丢弃不重要的点，下一层输入的query coord是一组全新的，被筛选过的采样点
+            # todo --------------------------------------------------------------------#
+            # 保留前topk非空个空间点：
+            query_coord_2x = batch_indexing(query_coord_2x, indices, layout='channel_last')  # [B, K, 3] 
             query_feat_2x = batch_indexing(query_feat_2x, indices, layout='channel_last')  # [B, K, C]
             seg_pred_2x = batch_indexing(seg_pred_2x, indices, layout='channel_last')  # [B, K, CLS]
 
@@ -156,7 +170,9 @@ class SparseVoxelDecoder(BaseModule):
                 interval // 2)
             )
 
-            query_coord = query_coord_2x.detach()
+            # todo ---------------------------------------#
+            # todo .detach()
+            query_coord = query_coord_2x.detach() # detach(): 让下一层仅根据上一层的结果细化，无需计算筛选梯度
             query_feat = query_feat_2x.detach()
 
         return occ_preds
