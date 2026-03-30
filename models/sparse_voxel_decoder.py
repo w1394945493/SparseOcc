@@ -107,7 +107,7 @@ class SparseVoxelDecoder(BaseModule):
         for i in range(len(self.decoder_layers)):
             self.decoder_layers[i].init_weights()
 
-    def forward(self, mlvl_feats, img_metas): # Corse-to-fine 稀疏采样解码
+    def forward(self, mlvl_feats, img_metas):  # Corse-to-fine 稀疏采样解码
         # todo ------------------------------------------------#
         # todo coarse-to-fine structure 
         occ_preds = []
@@ -116,41 +116,41 @@ class SparseVoxelDecoder(BaseModule):
 
         B = len(img_metas)
         # init query coords
-        interval = 2 ** self.num_layers # num_layers: 3 interval:8
+        interval = 2 ** self.num_layers # num_layers: 3 interval:2**3=8
         # ------------------------------------------------------#
         # interval：8 生成 (200/8 200/8 16/8)
-        query_coord = generate_grid(self.voxel_dim, interval).expand(B, -1, -1)  # [B, N, 3] # generate_grid: 在3D空间中生成一个均匀分布的离散网格坐标
+        query_coord = generate_grid(self.voxel_dim, interval).expand(B, -1, -1) # (1 1250 3) # [B, N, 3] # generate_grid: 在3D空间中生成一个均匀分布的离散网格坐标
         # 初始的查询特征
-        query_feat = torch.zeros([B, query_coord.shape[1], self.embed_dims], device=query_coord.device)  # [B, N, C]
+        query_feat = torch.zeros([B, query_coord.shape[1], self.embed_dims], device=query_coord.device) # (1 1250 256) # [B, N, C]
 
         # ------------------------------------------------------#
         # 逐层细化
-        for i, layer in enumerate(self.decoder_layers):
+        for i, layer in enumerate(self.decoder_layers): # len:3 
             DUMP.stage_count = i
-            
             interval = 2 ** (self.num_layers - i)  # 8 4 2 1
-
             # todo --------------------------------------------------------------------#
             # todo 将离散的网格坐标变成真实世界的物理坐标，并根据当前缩放倍数编码
             # bbox from coords
-            query_bbox = index2point(query_coord, self.pc_range, voxel_size=0.4)  # [B, N, 3] 网格索引 转换为 世界坐标
-            query_bbox = point2bbox(query_bbox, box_size=0.4 * interval)  # [B, N, 6] 位置 -> 位置 + 宽长高(网格尺寸0.4)
-            query_bbox = encode_bbox(query_bbox, pc_range=self.pc_range)  # [B, N, 6] # 编码
-            # todo --------------------------------------------------------------------#
-            # todo 空间特征提取：Transformer层，query从图像特征中采样
-            # transformer layer
-            query_feat = layer(query_feat, query_bbox, mlvl_feats, img_metas)  # [B, N, C]
-            
+            query_bbox = index2point(query_coord, self.pc_range, voxel_size=0.4)  # (1 1250 3) # query_coord:(1 1250 3) # pc_range: [-40 -40 -1 40 40 5.4] # [B, N, 3] 网格索引 转换为 世界坐标
+            query_bbox = point2bbox(query_bbox, box_size=0.4 * interval)          # (1 1250 6) # [B, N, 6] 位置 -> 位置 + 宽长高(网格尺寸0.4)
+            query_bbox = encode_bbox(query_bbox, pc_range=self.pc_range)          # (1 1250 6) # [B, N, 6] # 编码
+            #=========================================#
+            # decoder layer
+            query_feat = layer(query_feat,   # (1 1250 256)
+                               query_bbox,   # (1 1250 6)
+                               mlvl_feats,   # mlvl_feats: 4:(32 6 64 176 64) (32 6 32 88 64) (32 6 16 44 64) (32 6 8 22 64)
+                               img_metas,
+                               )  # [B, N, C]
+            #=========================================#
             # upsample 2x 
-            query_feat = self.lift_feat_heads[i](query_feat)  # [B, N, 8C] 将特征维度拉高
+            query_feat = self.lift_feat_heads[i](query_feat) # (1 1250 2048) # (1 1250 256) -> (1 1250 2048) # [B, N, 8C] 将特征维度拉高
             query_feat_2x, query_coord_2x = upsample(query_feat, query_coord, interval // 2) # 每个大方块切分成8个小方块，空间分辨率提升一倍
-
             if self.semantic:
                 seg_pred_2x = self.seg_pred_heads[i](query_feat_2x)  # [B, K, CLS]
             else:
                 seg_pred_2x = None
 
-            # todo --------------------------------------------------------------------#
+            #============================================#
             # todo 稀疏化筛选(剪枝)
             # sparsify after seg_pred
             non_free_prob = 1 - F.softmax(seg_pred_2x, dim=-1)[..., -1]  # [B, K] # 用以预测新切出来的小方块中，哪些非空
@@ -161,7 +161,7 @@ class SparseVoxelDecoder(BaseModule):
             query_coord_2x = batch_indexing(query_coord_2x, indices, layout='channel_last')  # [B, K, 3] 
             query_feat_2x = batch_indexing(query_feat_2x, indices, layout='channel_last')  # [B, K, C]
             seg_pred_2x = batch_indexing(seg_pred_2x, indices, layout='channel_last')  # [B, K, CLS]
-
+            
             occ_preds.append((
                 torch.div(query_coord_2x, interval // 2, rounding_mode='trunc').long(), # (1 2000 3)
                 None,
@@ -169,12 +169,10 @@ class SparseVoxelDecoder(BaseModule):
                 query_feat_2x, # (1 2000 256)
                 interval // 2) # 8//2=4
             )
-
             # todo ---------------------------------------#
             # todo .detach()
             query_coord = query_coord_2x.detach() # detach(): 让下一层仅根据上一层的结果细化，无需计算筛选梯度
             query_feat = query_feat_2x.detach()
-
         return occ_preds
 
 
@@ -232,13 +230,13 @@ class SparseVoxelDecoderLayer(BaseModule):
         self.ffn.init_weights()
 
     def forward(self, query_feat, query_bbox, mlvl_feats, img_metas):
-        query_pos = self.position_encoder(query_bbox[..., :3])
-        query_feat = query_feat + query_pos
+        query_pos = self.position_encoder(query_bbox[..., :3]) # (1 1250 256)
+        query_feat = query_feat + query_pos                    # (1 1250 256)
 
         if self.self_attn is not None:
-            query_feat = self.norm1(self.self_attn(query_bbox, query_feat))
-        sampled_feat = self.sampling(query_bbox, query_feat, mlvl_feats, img_metas)
-        query_feat = self.norm2(self.mixing(sampled_feat, query_feat))
-        query_feat = self.norm3(self.ffn(query_feat))
+            query_feat = self.norm1(self.self_attn(query_bbox, query_feat))          # (1 1250 6) (1 1250 256) -> (1 1250 256)
+        sampled_feat = self.sampling(query_bbox, query_feat, mlvl_feats, img_metas)  # (1 1250 4 32 64)  # img_metas应包括：img_metas[0]['img_shape'][0] -> 256 704 3 和 img_metas[0]['lidar2img']: (1 48 4 4)
+        query_feat = self.norm2(self.mixing(sampled_feat, query_feat))               # (1 1250 256)
+        query_feat = self.norm3(self.ffn(query_feat))                                # (1 1250 256)
 
         return query_feat

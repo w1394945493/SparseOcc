@@ -62,9 +62,9 @@ def encode_bbox(bboxes, pc_range=None):
 
 
 def decode_bbox(bboxes, pc_range=None):
-    xyz = bboxes[..., 0:3].clone()
-    wlh = bboxes[..., 3:6].exp()
-    rot = torch.atan2(bboxes[..., 6:7], bboxes[..., 7:8])
+    xyz = bboxes[..., 0:3].clone()                          # (1 1250 3)
+    wlh = bboxes[..., 3:6].exp()                            # (1 1250 3)
+    rot = torch.atan2(bboxes[..., 6:7], bboxes[..., 7:8])   # (1 1250 0)
 
     if pc_range is not None:
         xyz[..., 0] = xyz[..., 0] * (pc_range[3] - pc_range[0]) + pc_range[0]

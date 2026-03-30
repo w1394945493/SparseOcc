@@ -121,7 +121,8 @@ def main():
     )
 
     for i, data in tqdm(enumerate(val_loader)):
-
+        # data.keys()
+        # dict_keys(['img_metas', 'img', 'voxel_semantics', 'voxel_instances', 'instance_class_ids'])
         #print(data['img_metas'].data[0][0]['filename'][:6])
 
         with torch.no_grad():

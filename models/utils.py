@@ -35,11 +35,11 @@ def sparse2dense(indices, value, dense_shape, empty_value=0):
 
 
 @torch.no_grad()
-def generate_grid(n_vox, interval):
+def generate_grid(n_vox, interval): # n_vox:[200 200 16] interval:8
     # Create voxel grid
     grid_range = [torch.arange(0, n_vox[axis], interval) for axis in range(3)]
-    grid = torch.stack(torch.meshgrid(grid_range[0], grid_range[1], grid_range[2], indexing='ij'))  # 3 dx dy dz
-    grid = grid.cuda().view(3, -1).permute(1, 0)  # N, 3
+    grid = torch.stack(torch.meshgrid(grid_range[0], grid_range[1], grid_range[2], indexing='ij'))  # (3 25 25 2) 'ij': 按举证索引顺序(i,j,k)来生成网格
+    grid = grid.cuda().view(3, -1).permute(1, 0)  # (1250 3)
     return grid[None]  # 1, N, 3
 
 

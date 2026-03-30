@@ -62,13 +62,13 @@ class SparseOccTransformer(BaseModule):
         self.decoder.init_weights()
 
     def forward(self, mlvl_feats, img_metas):
-        for lvl, feat in enumerate(mlvl_feats):
-            B, TN, GC, H, W = feat.shape  # [B, TN, GC, H, W] 例如：(1 48 256 64 176) N=6 T=8 G=4
-            N, T, G, C = 6, TN // 6, 4, GC // 4
-            feat = feat.reshape(B, T, N, G, C, H, W)
-            feat = feat.permute(0, 1, 3, 2, 5, 6, 4)  # [B, T, G, N, H, W, C]
-            feat = feat.reshape(B*T*G, N, H, W, C)  # [BTG, N, H, W, C]
-            mlvl_feats[lvl] = feat.contiguous()
+        for lvl, feat in enumerate(mlvl_feats):         # mlvl_feats: 4:(1 48 256 64 176) (1 48 256 32 88) (1 48 256 16 44) (1 48 256 8 22)
+            B, TN, GC, H, W = feat.shape                # (1 48 256 64 176)
+            N, T, G, C = 6, TN // 6, 4, GC // 4         #  6 8 4 64
+            feat = feat.reshape(B, T, N, G, C, H, W)    # (1 8 6 4 64 64 176)
+            feat = feat.permute(0, 1, 3, 2, 5, 6, 4)    # (1 8 4 6 64 176 64)
+            feat = feat.reshape(B*T*G, N, H, W, C)      # (32 6 64 176 64)
+            mlvl_feats[lvl] = feat.contiguous()         # mlvl_feats: 4:(32 6 64 176 64) (32 6 32 88 64) (32 6 16 44 64) (32 6 8 22 64)
         
         lidar2img = np.asarray([m['lidar2img'] for m in img_metas]).astype(np.float32)
         lidar2img = torch.from_numpy(lidar2img).to(feat.device)  # [B, N, 4, 4] # (1 48 4 4)
@@ -78,9 +78,13 @@ class SparseOccTransformer(BaseModule):
         img_metas = copy.deepcopy(img_metas)
         img_metas[0]['lidar2img'] = torch.matmul(lidar2img, ego2lidar) # (1 48 4 4) 以自车为中心
 
-        # ------------------------------------------------ #
-        # todo Sparse Voxel Decoder
-        occ_preds = self.voxel_decoder(mlvl_feats, img_metas=img_metas) # 论文3.1 Sparse Voxel decoder 稀疏体素解码器  8//2=4 4//2=2 2//2=1
+        #============================================================#
+        # 论文3.1 Sparse Voxel decoder 稀疏体素解码器  8//2=4 4//2=2 2//2=1
+        # decoder
+        occ_preds = self.voxel_decoder(mlvl_feats,              # mlvl_feats: 4:(32 6 64 176 64) (32 6 32 88 64) (32 6 16 44 64) (32 6 8 22 64) 
+                                       img_metas=img_metas)     
+        #============================================================#
+
         # ------------------------------------------------ #
         # todo MaskFormer
         mask_preds, class_preds = self.decoder(occ_preds, mlvl_feats, img_metas) # 论文3.2 MaskFormer 

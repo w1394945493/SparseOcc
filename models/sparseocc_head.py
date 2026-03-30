@@ -47,7 +47,7 @@ class SparseOccHead(nn.Module):
 
     @auto_fp16(apply_to=('mlvl_feats'))
     def forward(self, mlvl_feats, img_metas):
-        occ_preds, mask_preds, class_preds = self.transformer(mlvl_feats, img_metas=img_metas)
+        occ_preds, mask_preds, class_preds = self.transformer(mlvl_feats, img_metas=img_metas) # mlvl_feats: 4:(1 48 256 64 176) (1 48 256 32 88) (1 48 256 16 44) (1 48 256 8 22)
         
         return {
             'occ_preds': occ_preds, 

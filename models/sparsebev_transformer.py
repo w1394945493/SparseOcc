@@ -186,7 +186,7 @@ class SparseBEVSelfAttention(BaseModule):
         super().__init__()
         self.pc_range = pc_range
 
-        self.attention = MultiheadAttention(embed_dims, num_heads, dropout, batch_first=True)
+        self.attention = MultiheadAttention(embed_dims, num_heads, dropout, batch_first=True) # 256 8 0.0 batch_first=True -> input:(B N C)
 
         if scale_adaptive:
             self.gen_tau = nn.Linear(embed_dims, num_heads)
@@ -199,27 +199,26 @@ class SparseBEVSelfAttention(BaseModule):
             nn.init.zeros_(self.gen_tau.weight)
             nn.init.uniform_(self.gen_tau.bias, 0.0, 2.0)
 
-    def inner_forward(self, query_bbox, query_feat, pre_attn_mask=None):
+    def inner_forward(self, query_bbox, query_feat, pre_attn_mask=None): # query_bbox:(1 1250 6) query_feat:(1 1250 256)
         """
         query_bbox: [B, Q, 10]
         query_feat: [B, Q, C]
         """
+        #==========================================#
+        # 构造基于空间距离的attention bias(注意力掩码)
         if self.gen_tau is not None:
-            dist = self.calc_bbox_dists(query_bbox)
-            tau = self.gen_tau(query_feat)  # [B, Q, 8]
-
+            dist = self.calc_bbox_dists(query_bbox)            # (1 1250 1250)  dist:距离取负: 距离越近值越大，反之越小
+            tau = self.gen_tau(query_feat)                     # (1 1250 8)       # [B, Q, 8] # 生成tau(每个query的缩放因子，对应8个attention head)
             if DUMP.enabled:
                 torch.save(tau, '{}/sasa_tau_stage{}.pth'.format(DUMP.out_dir, DUMP.stage_count))
-
-            tau = tau.permute(0, 2, 1)  # [B, 8, Q]
-            attn_mask = dist[:, None, :, :] * tau[..., None]  # [B, 8, Q, Q]
+            tau = tau.permute(0, 2, 1)                         # (1 8 1250)       # [B, 8, Q]
+            attn_mask = dist[:, None, :, :] * tau[..., None]   # (1 8 1250 1250)  # atten_mask = 距离相似度 x 学习到的权重 # [B, 8, Q, Q] 
             if pre_attn_mask is not None:
                 attn_mask[:, :, pre_attn_mask] = float('-inf')
-            attn_mask = attn_mask.flatten(0, 1)  # [Bx8, Q, Q]
+            attn_mask = attn_mask.flatten(0, 1)                # (8 1250 1250)    # [Bx8, Q, Q]
         else:
             attn_mask = None
-        
-        return self.attention(query_feat, attn_mask=attn_mask)
+        return self.attention(query_feat, attn_mask=attn_mask) # (1 1250 256) (8 1250 1250) -> (1 1250 256)
 
     def forward(self, query_bbox, query_feat, pre_attn_mask=None):
         if self.training and query_feat.requires_grad:
@@ -229,15 +228,15 @@ class SparseBEVSelfAttention(BaseModule):
 
     @torch.no_grad()
     def calc_bbox_dists(self, bboxes):
-        centers = decode_bbox(bboxes, self.pc_range)[..., :2]  # [B, Q, 2]
+        centers = decode_bbox(bboxes, self.pc_range)[..., :2]  # (1 1250 2) 只取前两维，忽略z轴
 
-        dist = []
+        dist = []  # 计算两两体素框之间的距离
         for b in range(centers.shape[0]):
-            dist_b = torch.norm(centers[b].reshape(-1, 1, 2) - centers[b].reshape(1, -1, 2), dim=-1)
+            dist_b = torch.norm(centers[b].reshape(-1, 1, 2) - centers[b].reshape(1, -1, 2), dim=-1) # (1250 1 2) - (1 1250 2) -> L2 dist -> (1250 1250)
             dist.append(dist_b[None, ...])
 
         dist = torch.cat(dist, dim=0)  # [B, Q, Q]
-        dist = -dist
+        dist = -dist                   # 取负值，距离越近，权重越大；反之越小
 
         return dist
 
@@ -266,7 +265,7 @@ class SparseBEVSampling(BaseModule):
         query_feat: [B, Q, C]
         '''
         B, Q = query_bbox.shape[:2]
-        image_h, image_w, _ = img_metas[0]['img_shape'][0]
+        image_h, image_w, _ = img_metas[0]['img_shape'][0] # (256 704 3)
 
         # sampling offset of all frames
         sampling_offset = self.sampling_offset(query_feat)
@@ -276,7 +275,7 @@ class SparseBEVSampling(BaseModule):
         sampling_points = sampling_points.expand(B, Q, self.num_frames, self.num_groups, self.num_points, 3)
 
         # warp sample points based on velocity
-        if query_bbox.shape[-1] > 8:
+        if query_bbox.shape[-1] > 8: # 有速度(可选)
             time_diff = img_metas[0]['time_diff']  # [B, F]
             time_diff = time_diff[:, None, :, None]  # [B, 1, F, 1]
             vel = query_bbox[..., 8:].detach()  # [B, Q, 2]
@@ -298,7 +297,7 @@ class SparseBEVSampling(BaseModule):
             sampling_points,
             mlvl_feats,
             scale_weights,
-            img_metas[0]['lidar2img'],
+            img_metas[0]['lidar2img'],   # (1 48 4 4)
             image_h, image_w
         )  # [B, Q, G, FP, C]
 

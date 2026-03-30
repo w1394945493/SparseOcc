@@ -23,9 +23,8 @@ class NuSceneOcc(NuScenesDataset):
         self.occ_gt_root = occ_gt_root
         self.data_infos = self.load_annotations(self.ann_file)
         # ------------------------------------------ #
-        self.data_infos = self.data_infos[::80]
-        self.data_infos = self.data_infos[:5]
-        
+        self.data_infos = self.data_infos[::80][:5]
+
         # ------------------------------------------ #
         # 离线处理
         # self.token2scene = {} # 将 token 和 scene 对应起来

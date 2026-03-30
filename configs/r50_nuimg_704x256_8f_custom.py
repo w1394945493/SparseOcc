@@ -126,6 +126,9 @@ bda_aug_conf = dict(
     flip_dy_ratio=0.5
 )
 
+# from mmdet3d.datasets.pipelines import Collect3D
+from mmdet3d.datasets.pipelines import LoadMultiViewImageFromFiles
+
 train_pipeline = [
     dict(type='LoadMultiViewImageFromFiles', to_float32=False, color_type='color'),
     dict(type='LoadMultiViewImageFromMultiSweeps', 
@@ -138,6 +141,8 @@ train_pipeline = [
     dict(type='Collect3D', keys=['img', 'voxel_semantics', 'voxel_instances', 'instance_class_ids'],  # other keys: 'mask_camera'
          meta_keys=('filename', 'ori_shape', 'img_shape', 'pad_shape', 'lidar2img', 'img_timestamp', 'ego2lidar'))
 ]
+
+
 
 test_pipeline = [
     dict(type='LoadMultiViewImageFromFiles', to_float32=False, color_type='color'),

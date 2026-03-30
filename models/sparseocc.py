@@ -154,20 +154,21 @@ class SparseOcc(MVXTwoStageDetector):
                 'occ_loc': occ_loc[b:b+1]
             } for b in range(batch_size)]
 
-    def simple_test_pts(self, x, img_metas, rescale=False):
-        outs = self.pts_bbox_head(x, img_metas)
+    def simple_test_pts(self, x, img_metas, rescale=False): # x 4:(1 48 256 64 176) (1 48 256 32 88) (1 48 256 16 44) (1 48 256 8 22)
+        outs = self.pts_bbox_head(x, img_metas) 
         outs = self.pts_bbox_head.merge_occ_pred(outs)
         return outs
 
     def simple_test(self, img_metas, img=None, rescale=False):
-        world_size = get_dist_info()[1]
-        if world_size == 1:  # online
-            return self.simple_test_online(img_metas, img, rescale)
-        else:  # offline
-            return self.simple_test_offline(img_metas, img, rescale)
+        # world_size = get_dist_info()[1]
+        # if world_size == 1:  # online
+        #     return self.simple_test_online(img_metas, img, rescale)
+        # else:  # offline
+        #     return self.simple_test_offline(img_metas, img, rescale)
+        return self.simple_test_offline(img_metas, img, rescale) # img_metas:list   img: (1 48 3 256 704)
 
     def simple_test_offline(self, img_metas, img=None, rescale=False):
-        img_feats = self.extract_feat(img=img, img_metas=img_metas)
+        img_feats = self.extract_feat(img=img, img_metas=img_metas) # 4:(1 48 256 64 176) (1 48 256 32 88) (1 48 256 16 44) (1 48 256 8 22)
         return self.simple_test_pts(img_feats, img_metas, rescale=rescale)
 
     def simple_test_online(self, img_metas, img=None, rescale=False):

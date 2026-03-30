@@ -93,9 +93,14 @@ class LoadMultiViewImageFromMultiSweeps(object):
                     sweep = results['sweeps']['prev'][sweep_idx - 1]
 
                 for sensor in cam_types:
-                    results['img'].append(mmcv.imread(sweep[sensor]['data_path'], self.color_type))
+                    # results['img'].append(mmcv.imread(sweep[sensor]['data_path'], self.color_type))
+                    file_name = sweep[sensor]['data_path'].replace('data/nuscenes/', self.data_root)
+                    results['img'].append(mmcv.imread(file_name, self.color_type))
+
                     results['img_timestamp'].append(sweep[sensor]['timestamp'] / 1e6)
-                    results['filename'].append(os.path.relpath(sweep[sensor]['data_path']))
+                    # results['filename'].append(os.path.relpath(sweep[sensor]['data_path']))
+                    results['filename'].append(file_name)
+                    
                     results['lidar2img'].append(compose_lidar2img(
                         results['ego2global_translation'],
                         results['ego2global_rotation'],
@@ -163,11 +168,12 @@ class LoadMultiViewImageFromMultiSweeps(object):
         if self.sweeps_num == 0:
             return results
 
-        world_size = get_dist_info()[1]
-        if world_size == 1 and self.test_mode:
-            return self.load_online(results)
-        else:
-            return self.load_offline(results)
+        # world_size = get_dist_info()[1]
+        # if world_size == 1 and self.test_mode:
+        #     return self.load_online(results)
+        # else:
+        #     return self.load_offline(results)
+        return self.load_offline(results)
 
 
 @PIPELINES.register_module()
